@@ -10,8 +10,9 @@ python libraries
 - time
 - random
 - numpy
+- ctypes
 
-c libraries(not neccesary right now - no c code on github yet)
+c libraries
 - stdio
 - SDL2
 - SDL_gfx
