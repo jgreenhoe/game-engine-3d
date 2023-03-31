@@ -11,17 +11,16 @@ import math
 import random
 import numpy as np
 import time
+import ctypes.util
+import inputs
 #Initializing pygame
 import pygame
 pygame.init()
 screen = [1915,1000]
-surface = pygame.display.set_mode(screen)
-pygame.display.set_caption("Game Base")
+#surface = pygame.display.set_mode(screen)
+#pygame.display.set_caption("Game Base")
 #Declaring lists and variables
 d = 500
-    #points of initial shape
-#rect = [[[-50, -50, 50], [-50, 50, 50], [50, 50, 50], [50, -50, 50], [-50, -50, -50], [-50, 50, -50], [50, 50, -50], [50, -50, -50]],[100,100,100]]
-#rect_c = [[[0,1,2,3],red],[[4,5,6,7],pink],[[0,3,7,4],green],[[1,2,6,5],orange],[[0,1,5,4],blue],[[2,3,7,6],blue]]
 pos = [0,0,-10]
 right = 0
 up = 0
@@ -29,8 +28,8 @@ forw = 0
 cam = [0,0,0]
 cam_right = 0
 cam_up = 0
-font = pygame.font.SysFont('lato',20,True)
-
+#font = pygame.font.SysFont('lato',20,True)
+drawPolygon = ctypes.PyDLL("/home/pi/drawPolygons.so")
 def read_obj(obj_file):
     points = []
     shapes = []
@@ -106,6 +105,8 @@ def draw_points(points,faces):
         sort_index = np.argsort(sort_points)
         shaped_points = shaped_points[np.flip(sort_index)]
         point_is_onscreen = point_is_onscreen[np.flip(sort_index)]
+        shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
+#        shaped_points = np.array([[[0,0,50,50],[0,50,50,0]],[[0,0,50,50],[0,50,50,0]],[[0,0,50,50],[0,50,50,0]]])
         end = time.time()
 #        print(end-start)
         count = 0
@@ -113,13 +114,19 @@ def draw_points(points,faces):
         g = 0
         b = 0
         start = time.time()
-        for i in shaped_points:
-            if len(i) > 2 and np.all(point_is_onscreen[count]):
-                pygame.draw.polygon(surface,(r,g,b,17),i)
-            r += .03
-            g += .03
-            b += .03
-            count += 1
+#        for i in shaped_points:
+#            if len(i) > 2 and np.all(point_is_onscreen[count]):
+#                pygame.draw.polygon(surface,(r,g,b,17),i)
+        draw_loop = drawPolygon.draw_polygon
+        shaped_points = shaped_points.astype(np.int32)
+        draw_loop.argtypes = [ctypes.c_int,ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+        draw_loop.restypes = None
+        shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
+        draw_polygon = draw_loop(shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
+#            r += .03
+#            g += .03
+#            b += .03
+#            count += 1
         end = time.time()
 #        print(end-start)
 #rotates shape around points by theta
@@ -178,7 +185,6 @@ def hitbox(shape1,shape2):
 
 #creating and specifying objects
 teapot = shapes("newell_teaset/teapot.obj")
-#teapot = shapes("/home/pi/Downloads/MaleLow.obj")
 #changes the velocity and cam angle of player
 def move():
     global right
@@ -271,7 +277,7 @@ def exec_world(*shapes):
 def main():
     while True:
         start = time.time()
-        surface.fill(black)
+#        surface.fill(black)
         draw_points(teapot.points,teapot.shapes)
         move()
         mouse_look()
@@ -281,11 +287,11 @@ def main():
         pos[2]+=math.cos(cam[1])*forw
         pos[0]+=math.sin(cam[1])*forw
         #draw text
-        pos_t = font.render('pos: '+str(int(pos[0]))+', '+str(int(pos[1]))+', '+str(int(pos[2])),True,red)
-        cam_t = font.render('cam: '+str(round(cam[0],1))+', '+str(round(cam[1],1))+', '+str(round(cam[2],1)),True,red)
-        surface.blit(pos_t,(0,0))
-        surface.blit(cam_t,(0,20))
-        pygame.display.update()
+#        pos_t = font.render('pos: '+str(int(pos[0]))+', '+str(int(pos[1]))+', '+str(int(pos[2])),True,red)
+#        cam_t = font.render('cam: '+str(round(cam[0],1))+', '+str(round(cam[1],1))+', '+str(round(cam[2],1)),True,red)
+#        surface.blit(pos_t,(0,0))
+#        surface.blit(cam_t,(0,20))
+#        pygame.display.update()
         end = time.time()
         if end-start < .017:
             time.sleep(.017-(end-start))
