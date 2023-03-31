@@ -1,6 +1,6 @@
 # game-engine-3d
 
-A 3d game engine written in python and c. Interprets and renders obj files and then uses pygame to draw(will use SDL in future version for speed).
+A 3d game engine written in python and c. Interprets and renders obj files in python and uses ctypes to access SDL in c to draw.
 
 ## Dependencies
 
