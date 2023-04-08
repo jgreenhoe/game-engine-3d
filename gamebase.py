@@ -12,7 +12,8 @@ import random
 import numpy as np
 import time
 import ctypes.util
-import inputs
+import pynput
+import threading
 #Initializing pygame
 import pygame
 pygame.init()
@@ -21,13 +22,13 @@ screen = [1915,1000]
 #pygame.display.set_caption("Game Base")
 #Declaring lists and variables
 d = 500
-pos = [0,0,-10]
-right = 0
-up = 0
-forw = 0
-cam = [0,0,0]
-cam_right = 0
-cam_up = 0
+#pos = [0,0,-10]
+#vel_x = 0
+#vel_y = 0
+#vel_z = 0
+#cam = [0,0,0]
+#cam_vel_x = 0
+#cam_vel_y = 0
 #font = pygame.font.SysFont('lato',20,True)
 drawPolygon = ctypes.PyDLL("/home/pi/drawPolygons.so")
 def read_obj(obj_file):
@@ -87,21 +88,55 @@ class shapes:
     def tilt(self):
         rotate(self.coord,self.point,self.theta)
 
+class position:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.z = -10
+        self.vel_x = 0
+        self.vel_y = 0
+        self.vel_z = 0
+        self.cam_x = 0
+        self.cam_y = 0
+        self.cam_z = 0
+        self.rt_x = 0
+        self.rt_y = 0
+        self.rt_z = 0
+        self.pos = [self.x, self.y, self.z]
+        self.cam = [self.cam_x, self.cam_y, self.cam_z]
+    def update(self):
+        self.x = self.x + self.vel_x
+        self.y = self.y + self.vel_y
+        self.z = self.z + self.vel_z
+        self.cam_x = self.cam_x + self.rt_x
+        self.cam_y = self.cam_y + self.rt_y
+        self.cam_z = self.cam_z + self.rt_z
+        self.pos = [self.x, self.y, self.z]
+        self.cam = [self.cam_x, self.cam_y, self.cam_z]
+    def right(self,a,cam_y):
+        self.vel_x += math.cos(cam_y)*a
+        self.vel_z += math.sin(cam_y)*a
+    def forw(self,a,cam_y):
+        self.vel_x += math.sin(cam_y)*a
+        self.vel_z += math.cos(cam_y)*a
+    def up(self,a):
+        self.vel_y += a
+position = position()
 #turns objects of class shape into 2d points and draws it
 def draw_points(points,faces):
 #organize shapes by distance to pos
 #shapes farthest away are drawn first
     start = time.time()
-    rotated_points = rotate(points,pos,cam)
-    if np.any((rotated_points[:,2] > pos[2])):
-        point_is_onscreen = rotated_points[:,2] > pos[2]
+    rotated_points = rotate(points,position.pos,position.cam)
+    if np.any((rotated_points[:,2] > position.pos[2])):
+        point_is_onscreen = rotated_points[:,2] > position.pos[2]
         onscreen_points = rotated_points[point_is_onscreen]
-        flat = np.array((500*(rotated_points[:,0]-pos[0])/(rotated_points[:,2]-pos[2])+screen[0]/2,-500*(rotated_points[:,1]-pos[1])/(rotated_points[:,2]-pos[2])+screen[1]/2))
+        flat = np.array((500*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-500*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
         faces_array = np.array(faces)
         flat = np.swapaxes(flat,0,1)
         shaped_points = flat[faces_array-1]
         point_is_onscreen = point_is_onscreen[faces_array-1]
-        sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-pos,axis=1)
+        sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-position.pos,axis=1)
         sort_index = np.argsort(sort_points)
         shaped_points = shaped_points[np.flip(sort_index)]
         point_is_onscreen = point_is_onscreen[np.flip(sort_index)]
@@ -117,12 +152,11 @@ def draw_points(points,faces):
 #        for i in shaped_points:
 #            if len(i) > 2 and np.all(point_is_onscreen[count]):
 #                pygame.draw.polygon(surface,(r,g,b,17),i)
-        draw_loop = drawPolygon.draw_polygon
+        
         shaped_points = shaped_points.astype(np.int32)
-        draw_loop.argtypes = [ctypes.c_int,ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
-        draw_loop.restypes = None
         shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
-        draw_polygon = draw_loop(shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
+        draw_polygon = draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
+        print(" ")
 #            r += .03
 #            g += .03
 #            b += .03
@@ -163,7 +197,7 @@ def hitbox(shape1,shape2):
     shape1_c = copy.deepcopy(shape1)
     shape2_c = copy.deepcopy(shape2)
     #rotates shape1_c.pos by cam because shape2_c.coord is also rotated by cam
-    #this ensures all points are up to date
+    #this ensures all points are vel_y to date
     rotate([shape1_c.pos],pos,cam)
     #rotates shape2_c.coord opposite to the rotation of shape1
     #this allows the hitbox of shape1 to be found without having to rotate the hitbox
@@ -187,66 +221,95 @@ def hitbox(shape1,shape2):
 teapot = shapes("newell_teaset/teapot.obj")
 #changes the velocity and cam angle of player
 def move():
-    global right
-    global up
-    global forw
-    global cam_right
-    global cam_up
-    for event in pygame.event.get():
-        if event.type == pygame.KEYUP:
-            if event.key == pygame.K_d:
-                right -= 2
-            if event.key == pygame.K_a:
-                right += 2
-            if event.key == pygame.K_SPACE:
-                up -= 2
-            if event.key == pygame.K_LSHIFT:
-                up += 2
-            if event.key == pygame.K_w:
-                forw -= 2
-            if event.key == pygame.K_s:
-                forw += 2
-            if event.key == pygame.K_RIGHT:
-                cam_right -= 0.1
-            if event.key == pygame.K_LEFT:
-                cam_right += 0.1
-            if event.key == pygame.K_UP:
-                cam_up -= 0.1
-            if event.key == pygame.K_DOWN:
-                cam_up += 0.1
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_d:
-                right += 2
-            if event.key == pygame.K_a:
-                right -= 2
-            if event.key == pygame.K_SPACE:
-                up += 2
-            if event.key == pygame.K_LSHIFT:
-                up -= 2
-            if event.key == pygame.K_w:
-                forw += 2
-            if event.key == pygame.K_s:
-                forw -= 2
-            if event.key == pygame.K_RIGHT:
-                cam_right += 0.1
-            if event.key == pygame.K_LEFT:
-                cam_right -= 0.1
-            if event.key == pygame.K_UP:
-                cam_up += 0.1
-            if event.key == pygame.K_DOWN:
-                cam_up -= 0.1
-            if event.key == pygame.K_ESCAPE:
-                pygame.quit()
-    cam[1]+=cam_right
-    cam[0]+=cam_up
-    if cam[1]>(math.pi*2):
-        cam[1]-=(math.pi*2)
-    if cam[1]<0:
-        cam[1]+=(math.pi*2)
-    if cam[0]>=math.pi/2:
-        cam[0]=math.pi/2
-    if cam[0]<=-math.pi/2:
-        cam[0]=-math.pi/2
+    keys_pressed = dict.fromkeys(['d','a','space','shift','w','s','right','left','up','down'],False)
+    cam_at_press = dict.fromkeys(['d','a','space','shift','w','s','right','left','up','down'],0)
+    cam_x = position.cam_x
+    cam_y = position.cam_y
+    def on_press(key):
+        nonlocal cam_x
+        nonlocal cam_y
+        cam_x = position.cam_x
+        cam_y = position.cam_y
+        if key == pynput.keyboard.KeyCode.from_char('d') and keys_pressed['d'] == False:
+            position.right(2,cam_y)
+            keys_pressed['d'] = True
+            cam_at_press['d'] = cam_y
+        if key == pynput.keyboard.KeyCode.from_char('a') and keys_pressed['a'] == False:
+            position.right(-2,cam_y)
+            keys_pressed['a'] = True
+            cam_at_press['a'] = cam_y
+        if key == pynput.keyboard.Key.space and keys_pressed['space'] == False:
+            position.up(2)
+            keys_pressed['space'] = True
+        if key == pynput.keyboard.Key.shift and keys_pressed['shift'] == False:
+            position.up(-2)
+            keys_pressed['shift'] = True
+        if key == pynput.keyboard.KeyCode.from_char('w') and keys_pressed['w'] == False:
+            position.forw(2,cam_x)
+            keys_pressed['w'] = True
+            cam_at_press['w'] = cam_x
+        if key == pynput.keyboard.KeyCode.from_char('s') and keys_pressed['s'] == False:
+            position.forw(-2,cam_x)
+            keys_pressed['s'] = True
+            cam_at_press['s'] = cam_x
+        if key == pynput.keyboard.Key.right and keys_pressed['right'] == False:
+            position.rt_y -= 0.1
+            keys_pressed['right'] = True
+        if key == pynput.keyboard.Key.left and keys_pressed['left'] == False:
+            position.rt_y += 0.1
+            keys_pressed['left'] = True
+        if key == pynput.keyboard.Key.up and keys_pressed['up'] == False:
+            position.rt_x -= 0.1
+            keys_pressed['up'] = True
+        if key == pynput.keyboard.Key.down and keys_pressed['down'] == False:
+            position.rt_x += 0.1
+            keys_pressed['down'] = True
+        if key == pynput.keyboard.Key.esc:
+            pygame.quit()
+        if position.cam_y > (math.pi*2):
+            position.cam_y -= (math.pi*2)
+        if position.cam_y < 0:
+            position.cam_y += (math.pi*2)
+        if position.cam_x >= math.pi/2:
+            position.cam_x = math.pi/2
+        if position.cam_x <= -math.pi/2:
+            position.cam_x = -math.pi/2
+    def on_release(key):
+        if key == pynput.keyboard.KeyCode.from_char('d'):
+            position.right(-2,cam_at_press['d'])
+            keys_pressed['d'] = False
+        if key == pynput.keyboard.KeyCode.from_char('a'):
+            position.right(2,cam_at_press['a'])
+            keys_pressed['a'] = False
+        if key == pynput.keyboard.Key.space:
+            position.up(-2)
+            keys_pressed['space'] = False
+        if key == pynput.keyboard.Key.shift:
+            position.up(2)
+            keys_pressed['shift'] = False
+        if key == pynput.keyboard.KeyCode.from_char('w'):
+            position.forw(-2,cam_at_press['w'])
+            keys_pressed['w'] = False
+        if key == pynput.keyboard.KeyCode.from_char('s'):
+            position.forw(2,cam_at_press['s'])
+            keys_pressed['s'] = False
+        if key == pynput.keyboard.Key.right:
+            position.rt_y += 0.1
+            keys_pressed['right'] = False
+        if key == pynput.keyboard.Key.left:
+            position.rt_y -= 0.1
+            keys_pressed['left'] = False
+        if key == pynput.keyboard.Key.up:
+            position.rt_x += 0.1
+            keys_pressed['up'] = False
+        if key == pynput.keyboard.Key.down:
+            position.rt_x -= 0.1
+            keys_pressed['down'] = False
+    def start_listener():
+        with pynput.keyboard.Listener(on_press=on_press,on_release=on_release) as listener:
+            listener.join()
+    listener_thread = threading.Thread(target=start_listener)
+    listener_thread.start()
 
 def mouse_look():
     pygame.mouse.set_visible(False)
@@ -273,19 +336,36 @@ def exec_world(*shapes):
     player.ttheta[1] = player.theta[1] - cam[1]
     player.ttheta[2] = player.theta[2] - cam[2]
     draw_points(shapes)
-    
+   
+create_SDL_window = drawPolygon.create_SDL_window
+create_SDL_window.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+create_SDL_window.restypes = ctypes.c_void_p
+
+create_SDL_renderer = drawPolygon.create_SDL_renderer
+create_SDL_renderer.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint]
+create_SDL_renderer.restypes = ctypes.c_void_p
+
+draw_loop = drawPolygon.draw_polygon
+draw_loop.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+draw_loop.restypes = None
+
+window = create_SDL_window(b"Game Base", 0, 0, 1915, 1000, 0)
+renderer = create_SDL_renderer(window, -1, 0)
+
 def main():
+    move()
+    
     while True:
         start = time.time()
 #        surface.fill(black)
+        position.update()
         draw_points(teapot.points,teapot.shapes)
-        move()
-        mouse_look()
-        pos[0]+=math.cos(cam[1])*right
-        pos[2]-=math.sin(cam[1])*right
-        pos[1]+=up
-        pos[2]+=math.cos(cam[1])*forw
-        pos[0]+=math.sin(cam[1])*forw
+#        mouse_look()
+#        position.pos[0]+=math.cos(position.cam[1])*position.vel_x
+#        position.pos[2]-=math.sin(position.cam[1])*position.vel_x
+#        pos[1]+=vel_y
+#        pos[2]+=math.cos(cam[1])*vel_z
+#        pos[0]+=math.sin(cam[1])*vel_z
         #draw text
 #        pos_t = font.render('pos: '+str(int(pos[0]))+', '+str(int(pos[1]))+', '+str(int(pos[2])),True,red)
 #        cam_t = font.render('cam: '+str(round(cam[0],1))+', '+str(round(cam[1],1))+', '+str(round(cam[2],1)),True,red)
@@ -298,3 +378,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 
