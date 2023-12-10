@@ -12,14 +12,11 @@ import random
 import numpy as np
 import time
 import ctypes.util
-import pynput
+from pynput import keyboard
 import threading
-#Initializing pygame
-import pygame
-pygame.init()
-screen = [1915,1000]
-#surface = pygame.display.set_mode(screen)
-#pygame.display.set_caption("Game Base")
+import queue
+from handle_inputs import handle_inputs
+screen = [1000,500]
 #Declaring lists and variables
 d = 500
 #pos = [0,0,-10]
@@ -29,8 +26,7 @@ d = 500
 #cam = [0,0,0]
 #cam_vel_x = 0
 #cam_vel_y = 0
-#font = pygame.font.SysFont('lato',20,True)
-drawPolygon = ctypes.PyDLL("/home/pi/drawPolygons.so")
+drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/test.so")
 def read_obj(obj_file):
     points = []
     shapes = []
@@ -114,19 +110,18 @@ class position:
         self.pos = [self.x, self.y, self.z]
         self.cam = [self.cam_x, self.cam_y, self.cam_z]
     def right(self,a,cam_y):
-        self.vel_x += math.cos(cam_y)*a
-        self.vel_z += math.sin(cam_y)*a
+        self.x += math.cos(cam_y)*a
+        self.z -= math.sin(cam_y)*a
     def forw(self,a,cam_y):
-        self.vel_x += math.sin(cam_y)*a
-        self.vel_z += math.cos(cam_y)*a
+        self.x += math.sin(cam_y)*a
+        self.z += math.cos(cam_y)*a
     def up(self,a):
-        self.vel_y += a
+        self.y += a
 position = position()
 #turns objects of class shape into 2d points and draws it
 def draw_points(points,faces):
 #organize shapes by distance to pos
 #shapes farthest away are drawn first
-    start = time.time()
     rotated_points = rotate(points,position.pos,position.cam)
     if np.any((rotated_points[:,2] > position.pos[2])):
         point_is_onscreen = rotated_points[:,2] > position.pos[2]
@@ -141,28 +136,11 @@ def draw_points(points,faces):
         shaped_points = shaped_points[np.flip(sort_index)]
         point_is_onscreen = point_is_onscreen[np.flip(sort_index)]
         shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
-#        shaped_points = np.array([[[0,0,50,50],[0,50,50,0]],[[0,0,50,50],[0,50,50,0]],[[0,0,50,50],[0,50,50,0]]])
-        end = time.time()
-#        print(end-start)
-        count = 0
-        r = 0
-        g = 0
-        b = 0
-        start = time.time()
-#        for i in shaped_points:
-#            if len(i) > 2 and np.all(point_is_onscreen[count]):
-#                pygame.draw.polygon(surface,(r,g,b,17),i)
         
         shaped_points = shaped_points.astype(np.int32)
         shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
-        draw_polygon = draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
-        print(" ")
-#            r += .03
-#            g += .03
-#            b += .03
-#            count += 1
-        end = time.time()
-#        print(end-start)
+        draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
+
 #rotates shape around points by theta
 #shape format [[x,y,z],[x,y,z]...] point format [x,y,z] theta format [x,y,z]
 def rotate(shape,point,theta):
@@ -220,96 +198,40 @@ def hitbox(shape1,shape2):
 #creating and specifying objects
 teapot = shapes("newell_teaset/teapot.obj")
 #changes the velocity and cam angle of player
-def move():
-    keys_pressed = dict.fromkeys(['d','a','space','shift','w','s','right','left','up','down'],False)
-    cam_at_press = dict.fromkeys(['d','a','space','shift','w','s','right','left','up','down'],0)
-    cam_x = position.cam_x
-    cam_y = position.cam_y
-    def on_press(key):
-        nonlocal cam_x
-        nonlocal cam_y
-        cam_x = position.cam_x
-        cam_y = position.cam_y
-        if key == pynput.keyboard.KeyCode.from_char('d') and keys_pressed['d'] == False:
-            position.right(2,cam_y)
-            keys_pressed['d'] = True
-            cam_at_press['d'] = cam_y
-        if key == pynput.keyboard.KeyCode.from_char('a') and keys_pressed['a'] == False:
-            position.right(-2,cam_y)
-            keys_pressed['a'] = True
-            cam_at_press['a'] = cam_y
-        if key == pynput.keyboard.Key.space and keys_pressed['space'] == False:
-            position.up(2)
-            keys_pressed['space'] = True
-        if key == pynput.keyboard.Key.shift and keys_pressed['shift'] == False:
-            position.up(-2)
-            keys_pressed['shift'] = True
-        if key == pynput.keyboard.KeyCode.from_char('w') and keys_pressed['w'] == False:
-            position.forw(2,cam_x)
-            keys_pressed['w'] = True
-            cam_at_press['w'] = cam_x
-        if key == pynput.keyboard.KeyCode.from_char('s') and keys_pressed['s'] == False:
-            position.forw(-2,cam_x)
-            keys_pressed['s'] = True
-            cam_at_press['s'] = cam_x
-        if key == pynput.keyboard.Key.right and keys_pressed['right'] == False:
-            position.rt_y -= 0.1
-            keys_pressed['right'] = True
-        if key == pynput.keyboard.Key.left and keys_pressed['left'] == False:
-            position.rt_y += 0.1
-            keys_pressed['left'] = True
-        if key == pynput.keyboard.Key.up and keys_pressed['up'] == False:
-            position.rt_x -= 0.1
-            keys_pressed['up'] = True
-        if key == pynput.keyboard.Key.down and keys_pressed['down'] == False:
-            position.rt_x += 0.1
-            keys_pressed['down'] = True
-        if key == pynput.keyboard.Key.esc:
-            pygame.quit()
-        if position.cam_y > (math.pi*2):
-            position.cam_y -= (math.pi*2)
-        if position.cam_y < 0:
-            position.cam_y += (math.pi*2)
-        if position.cam_x >= math.pi/2:
-            position.cam_x = math.pi/2
-        if position.cam_x <= -math.pi/2:
-            position.cam_x = -math.pi/2
-    def on_release(key):
-        if key == pynput.keyboard.KeyCode.from_char('d'):
-            position.right(-2,cam_at_press['d'])
-            keys_pressed['d'] = False
-        if key == pynput.keyboard.KeyCode.from_char('a'):
-            position.right(2,cam_at_press['a'])
-            keys_pressed['a'] = False
-        if key == pynput.keyboard.Key.space:
-            position.up(-2)
-            keys_pressed['space'] = False
-        if key == pynput.keyboard.Key.shift:
-            position.up(2)
-            keys_pressed['shift'] = False
-        if key == pynput.keyboard.KeyCode.from_char('w'):
-            position.forw(-2,cam_at_press['w'])
-            keys_pressed['w'] = False
-        if key == pynput.keyboard.KeyCode.from_char('s'):
-            position.forw(2,cam_at_press['s'])
-            keys_pressed['s'] = False
-        if key == pynput.keyboard.Key.right:
-            position.rt_y += 0.1
-            keys_pressed['right'] = False
-        if key == pynput.keyboard.Key.left:
-            position.rt_y -= 0.1
-            keys_pressed['left'] = False
-        if key == pynput.keyboard.Key.up:
-            position.rt_x += 0.1
-            keys_pressed['up'] = False
-        if key == pynput.keyboard.Key.down:
-            position.rt_x -= 0.1
-            keys_pressed['down'] = False
-    def start_listener():
-        with pynput.keyboard.Listener(on_press=on_press,on_release=on_release) as listener:
-            listener.join()
-    listener_thread = threading.Thread(target=start_listener)
-    listener_thread.start()
+def move(keys_pressed):
+    keys_released = []
+    speed = .5
+    
+    for i in range(0,handle_inputs.pressed_keys.qsize()):
+        keys_pressed.append(handle_inputs.pressed_keys.get_nowait())
+    for i in range(0,handle_inputs.released_keys.qsize()):
+        keys_released.append(handle_inputs.released_keys.get_nowait())
+    keys_pressed = list(set(keys_pressed)-set(keys_released))
+    
+    for i in keys_pressed:
+        if (i) == 'd':
+            position.right(speed,position.cam_y)
+        if (i) == 'a':
+            position.right(-speed,position.cam_y)
+        if (i) == 's':
+            position.forw(-speed,position.cam_y)
+        if (i) == 'w':
+            position.forw(speed,position.cam_y)
+        if (i) == keyboard.Key.space:
+            position.up(speed)
+        if (i) == keyboard.Key.shift:
+            position.up(-speed)
+        
+        if (i) == keyboard.Key.right:
+            position.cam_y += 0.1
+        if (i) == keyboard.Key.left:
+            position.cam_y -= 0.1
+        if (i) == keyboard.Key.up:
+            position.cam_x += 0.1
+        if (i) == keyboard.Key.down:
+            position.cam_x -= 0.1
+    
+    return keys_pressed
 
 def mouse_look():
     pygame.mouse.set_visible(False)
@@ -349,30 +271,22 @@ draw_loop = drawPolygon.draw_polygon
 draw_loop.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
 draw_loop.restypes = None
 
-window = create_SDL_window(b"Game Base", 0, 0, 1915, 1000, 0)
+window = create_SDL_window(b"Game Base", 0, 0, screen[0], screen[1], 0)
 renderer = create_SDL_renderer(window, -1, 0)
 
+handle_inputs = handle_inputs()
+handle_inputs.start_thread()
+
 def main():
-    move()
+    keys_pressed = []
     
     while True:
         start = time.time()
-#        surface.fill(black)
+        keys_pressed = move(keys_pressed)
         position.update()
         draw_points(teapot.points,teapot.shapes)
-#        mouse_look()
-#        position.pos[0]+=math.cos(position.cam[1])*position.vel_x
-#        position.pos[2]-=math.sin(position.cam[1])*position.vel_x
-#        pos[1]+=vel_y
-#        pos[2]+=math.cos(cam[1])*vel_z
-#        pos[0]+=math.sin(cam[1])*vel_z
-        #draw text
-#        pos_t = font.render('pos: '+str(int(pos[0]))+', '+str(int(pos[1]))+', '+str(int(pos[2])),True,red)
-#        cam_t = font.render('cam: '+str(round(cam[0],1))+', '+str(round(cam[1],1))+', '+str(round(cam[2],1)),True,red)
-#        surface.blit(pos_t,(0,0))
-#        surface.blit(cam_t,(0,20))
-#        pygame.display.update()
         end = time.time()
+        print(end-start)
         if end-start < .017:
             time.sleep(.017-(end-start))
 
