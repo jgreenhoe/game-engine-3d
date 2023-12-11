@@ -27,48 +27,74 @@ d = 500
 #cam_vel_x = 0
 #cam_vel_y = 0
 drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/drawPolygons.so")
-def read_obj(obj_file):
-    points = []
-    shapes = []
-    with open(obj_file) as file:
-        for line in file:
-            if line[:2] == "v ":
-                x = line.find(" ") + 1
-                y = line.find(" ",x) + 1
-                z = line.find(" ",y) + 1
-                points.append([float(line[x:y]),float(line[y:z]),float(line[z:-1])])
-            elif line[0] == 'f':
-                fline = []
-                f_item = []
-                space_start = 0
-                more_face_values = True
-                while more_face_values:
-                    space_start = line.find(" ", space_start+1)
-                    if (space_start == -1) or (line[space_start+1] == "\n"):
-                        more_face_values = False
-                    else:
-                        slash_end = line.find("/",space_start)
-                        if slash_end != -1:
-                            f_item.append(int(line[space_start+1:slash_end]))
-                        else:
-                            space_end = line.find(" ", space_start+1)
-                            f_item.append(int(line[space_start+1:space_end]))
-                            space_start = space_end
-                shapes.append(f_item)
-    return [points,shapes]
+class read_obj:
+    def __init__(self, obj_file):
+        self.v = []
+        self.vt = []
+        self.vn = []
+        self.fv = []
+        self.fvt = []
+        self.fvn = []
+        with open(obj_file) as file:
+            for line in file:
+                if line[:2] == "v ":
+                    x = line.find(" ") + 1
+                    y = line.find(" ",x) + 1
+                    z = line.find(" ",y) + 1
+                    self.v.append([float(line[x:y]),float(line[y:z]),float(line[z:-1])])
+                elif line[:2] == "vt":
+                    x = line.find(" ") + 1
+                    y = line.find(" ",x) + 1
+                    self.vt.append([float(line[x:y]),float(line[y:-1])])
+                elif line[:2] == "vn":
+                    x = line.find(" ") + 1
+                    y = line.find(" ",x) + 1
+                    z = line.find(" ",y) + 1
+                    self.vn.append([float(line[x:y]),float(line[y:z]),float(line[z:-1])])
+                elif line[0] == 'f':
+                    if line[-1] != " ":
+                        line += " "
+                    f_v = []
+                    f_vt = []
+                    f_vn = []
+                    start_pos = 1
+                    start_type = " "
+                    counter = 2
+                    for char in line[2:]:
+                        if char == " ":
+                            if start_type == " " and line[start_pos+1:counter] != '\n':
+                                f_v.append(int(line[start_pos+1:counter]))
+                            if start_type == "/":
+                                f_vn.append(int(line[start_pos+1:counter]))
+                            start_pos = counter
+                            start_type = " "
+                        elif char == "/":
+                            if start_type == " ":
+                                f_v.append(int(line[start_pos+1:counter]))
+                            if start_type == "/" and start_pos+1 != counter:
+                                f_vt.append(int(line[start_pos+1:counter]))
+                            start_pos = counter
+                            start_type = "/"
+                        counter += 1
+                    self.fv.append(f_v)
+                    self.fvt.append(f_vt)
+                    self.fvn.append(f_vn)
+                    
 
 class shapes:
     def __init__(self,obj_file):
         obj = read_obj(obj_file)
-        self.points = np.array(obj[0])
-        max_len = 3
-        for i in obj[1]:
-            if len(i) > max_len:
-                max_len = len(i)
-        for i in obj[1]:
+        self.points = np.array(obj.v)
+        self.normals = np.array(obj.vn)
+        max_len = len(max(obj.fv, key=len))
+        for i in obj.fv:
             while len(i) < max_len:
-                i.append(i[2])
-        self.shapes = np.array(obj[1])
+                i.append(i[-1])
+        for i in obj.fvn:
+            while len(i) < max_len:
+                i.append(i[-1])
+        self.vfaces = np.array(obj.fv)
+        self.nvfaces = np.array(obj.fvn)
 #multiplies self.shape by size
     def set_size(self,size):
         for i in self.points:
@@ -98,8 +124,6 @@ class position:
         self.rt_x = 0
         self.rt_y = 0
         self.rt_z = 0
-        self.pos = [self.x, self.y, self.z]
-        self.cam = [self.cam_x, self.cam_y, self.cam_z]
     def update(self):
         self.x = self.x + self.vel_x
         self.y = self.y + self.vel_y
@@ -119,27 +143,38 @@ class position:
         self.y += a
 position = position()
 #turns objects of class shape into 2d points and draws it
-def draw_points(points,faces):
+def draw_points(obj):
 #organize shapes by distance to pos
 #shapes farthest away are drawn first
+    points = obj.points
+    normals = obj.normals
+    faces = obj.vfaces
+    nvfaces = obj.nvfaces
     rotated_points = rotate(points,position.pos,position.cam)
-    if np.any((rotated_points[:,2] > position.pos[2])):
-        point_is_onscreen = rotated_points[:,2] > position.pos[2]
-        onscreen_points = rotated_points[point_is_onscreen]
-        flat = np.array((500*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-500*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
-        faces_array = np.array(faces)
-        flat = np.swapaxes(flat,0,1)
-        shaped_points = flat[faces_array-1]
-        point_is_onscreen = point_is_onscreen[faces_array-1]
-        sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-position.pos,axis=1)
-        sort_index = np.argsort(sort_points)
-        shaped_points = shaped_points[np.flip(sort_index)]
-        point_is_onscreen = point_is_onscreen[np.flip(sort_index)]
-        shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
-        
-        shaped_points = shaped_points.astype(np.int32)
-        shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
-        draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
+    #rotated_points format: [[x, y, z], [x, y, z]...]
+    
+    normals_drawn = normals[:,2] < 0
+    polygon_normals = normals_drawn[nvfaces-1]
+    polygons_drawn = np.any(polygon_normals,1)
+    faces = faces[polygons_drawn]
+    flat = np.array((500*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-500*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
+    #flat format: [[x, x...], [y, y...]]
+    
+    flat = np.swapaxes(flat,0,1)
+    #flat format: [[x, y], [x, y]...]
+    
+    faces_array = np.array(faces)
+    shaped_points = flat[faces_array-1]
+    #shaped_points format: [[[x, y], [x, y]...]...]
+    
+    sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-position.pos,axis=1)
+    sort_index = np.argsort(sort_points)
+    shaped_points = shaped_points[np.flip(sort_index)]
+    shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
+    
+    shaped_points = shaped_points.astype(np.int32)
+    shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
+    draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
 
 #rotates shape around points by theta
 #shape format [[x,y,z],[x,y,z]...] point format [x,y,z] theta format [x,y,z]
@@ -169,6 +204,18 @@ def rotate(shape,point,theta):
     
     return sc
 
+def clip(polygon_o):
+    polygon = np.copy(polygon_o)
+    #polygon format: [[x, y], [x, y]...]
+    if np.all(polygon[:,0] < -screen[0]/2) or np.all(polygon[:,0] > screen[0]/2):
+        return []
+    elif np.all(polygon[:,1] < -screen[1]/2) or np.all(polygon[:,1] > screen[1]/2):
+        return []
+    elif np.all(polygon[:,0] > -screen[0]/2) and np.all(polygon[:,0] < screen[0]/2):
+        return polygon
+    elif np.all(polygon[:,1] > -screen[1]/2) and np.all(polygon[:,1] < screen[1]/2):
+        return polygon
+
 #determines if any points of shape2 is inside rectangular hitbox of shape1
 def hitbox(shape1,shape2):
     #shape1_c and shape2_c are expendible copies of shape1 and shape2, to be manipulated without changing actual objects
@@ -197,6 +244,7 @@ def hitbox(shape1,shape2):
 
 #creating and specifying objects
 teapot = shapes("newell_teaset/teapot.obj")
+#teapot = shapes("/home/pi/Downloads/woman.obj")
 #changes the velocity and cam angle of player
 def move(keys_pressed):
     keys_released = []
@@ -284,11 +332,11 @@ def main():
         start = time.time()
         keys_pressed = move(keys_pressed)
         position.update()
-        draw_points(teapot.points,teapot.shapes)
+        draw_points(teapot)
         end = time.time()
-        print(end-start)
         if end-start < .017:
             time.sleep(.017-(end-start))
+        print(end-start)
 
 if __name__ == "__main__":
     main()
