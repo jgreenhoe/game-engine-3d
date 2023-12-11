@@ -2,7 +2,7 @@
 
 A 3d game engine written in python and c. Main program in python handles high-level proccesses, then uses ctypes to to render using c library SDL.
 
-note: should only need gamebase.py, handle_inputs.py, and drawPolygons.so to run the program, other files are probably outdated
+note: should only need gamebase.py, handle_inputs.py, any .obj files, and drawPolygons.so to run the program, other files are probably outdated
 
 ## Dependencies
 
