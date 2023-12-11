@@ -26,7 +26,7 @@ d = 500
 #cam = [0,0,0]
 #cam_vel_x = 0
 #cam_vel_y = 0
-drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/test.so")
+drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/drawPolygons.so")
 def read_obj(obj_file):
     points = []
     shapes = []
