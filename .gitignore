@@ -1,10 +1,15 @@
 backup.py
-draw_loop.c
-draw_loop.o
+draw_loop
 game-engine-3d/
 geom.py
+shapes.py
 new.py
 test1.py
 test2.py
 test3.py
+<<<<<<< HEAD
 __pycache__/
+=======
+test
+test.c
+>>>>>>> 39cca5c9fe1cba4377362fe9e683c1815cc97690
