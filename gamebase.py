@@ -83,6 +83,7 @@ class shapes:
             while len(i) < max_len:
                 i.append(i[-1])
         #repeate the process of vertex faces for vertex normal faces
+        max_len = len(max(obj.fvn, key=len))
         for i in obj.fvn:
             while len(i) < max_len:
                 i.append(i[-1])
@@ -120,6 +121,8 @@ class position:
         self.rt_x = 0
         self.rt_y = 0
         self.rt_z = 0
+        self.pos = [self.x, self.y, self.z]
+        self.cam = [self.cam_x, self.cam_y, self.cam_z]
     def update(self):
         self.x = self.x + self.vel_x
         self.y = self.y + self.vel_y
@@ -149,10 +152,11 @@ def draw_points(obj):
     nvfaces = obj.nvfaces
     
     rotated_points = rotate(points,position.pos,position.cam)
+    rotated_normals = rotate(normals, [0,0,0],position.cam)
     #rotated_points format: [[x, y, z], [x, y, z]...]
 
     #filter in only the faces that contain vertices whose normals face the camera
-    normals_drawn = normals[:,2] < 0
+    normals_drawn = rotated_normals[:,2] < 0
     polygon_normals = normals_drawn[nvfaces-1]
     polygons_drawn = np.any(polygon_normals,1)
     faces = faces[polygons_drawn]
