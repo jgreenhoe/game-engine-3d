@@ -1,12 +1,4 @@
-#RGB color variables
-red = [225,0,0]
-black = [0,0,0]
-blue = [0,0,225]
-green = [0,225,0]
-pink = [255,192,203]
-orange = [255,165,0]
-purple = [216,191,216]
-
+#import libraries
 import math
 import random
 import numpy as np
@@ -16,17 +8,13 @@ from pynput import keyboard
 import threading
 import queue
 from handle_inputs import handle_inputs
-screen = [1000,500]
 #Declaring lists and variables
+screen = [1000,500]
 d = 500
-#pos = [0,0,-10]
-#vel_x = 0
-#vel_y = 0
-#vel_z = 0
-#cam = [0,0,0]
-#cam_vel_x = 0
-#cam_vel_y = 0
+#.so file compiled from draw_loop.c
 drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/drawPolygons.so")
+
+#class of organized data extracted from .obj file
 class read_obj:
     def __init__(self, obj_file):
         self.v = []
@@ -86,30 +74,38 @@ class shapes:
         obj = read_obj(obj_file)
         self.points = np.array(obj.v)
         self.normals = np.array(obj.vn)
+        #find the maximum amount of vertex indexes a face has
         max_len = len(max(obj.fv, key=len))
+        #increase the number of vertex indexes in each face until 
+        #each face has max_len vertex indexes
+        #this allows the face array to be converted to np.array
         for i in obj.fv:
             while len(i) < max_len:
                 i.append(i[-1])
+        #repeate the process of vertex faces for vertex normal faces
         for i in obj.fvn:
             while len(i) < max_len:
                 i.append(i[-1])
+        #convert vertex and vertex normal faces to np.array
         self.vfaces = np.array(obj.fv)
         self.nvfaces = np.array(obj.fvn)
-#multiplies self.shape by size
+    #multiplies self.shape by size multiplier
     def set_size(self,size):
+        #size format: [x, y, z]
         for i in self.points:
             i[0] = i[0]*size[0]
             i[1] = i[1]*size[1]
             i[2] = i[2]*size[2]
-#takes variables to be used in tilt()
+    #takes variables to be used in tilt()
     def set_tilt(self,point,theta):
         self.point = point
         self.theta = theta
         self.ttheta = copy.deepcopy(theta)
-#rotates self.coord by variable from set_tilt()
+    #rotates self.coord by variable from set_tilt()
     def tilt(self):
         rotate(self.coord,self.point,self.theta)
 
+#class of the camera position and rotation
 class position:
     def __init__(self):
         self.x = 0
@@ -141,25 +137,30 @@ class position:
         self.z += math.cos(cam_y)*a
     def up(self,a):
         self.y += a
+
+#create instance of position for player position
 position = position()
-#turns objects of class shape into 2d points and draws it
+#calculates optimized 2d coordinates from 'shapes' instances,
+#then calls the draw_loop function from drawPolygon to render
 def draw_points(obj):
-#organize shapes by distance to pos
-#shapes farthest away are drawn first
     points = obj.points
     normals = obj.normals
     faces = obj.vfaces
     nvfaces = obj.nvfaces
+    
     rotated_points = rotate(points,position.pos,position.cam)
     #rotated_points format: [[x, y, z], [x, y, z]...]
-    
+
+    #filter in only the faces that contain vertices whose normals face the camera
     normals_drawn = normals[:,2] < 0
     polygon_normals = normals_drawn[nvfaces-1]
     polygons_drawn = np.any(polygon_normals,1)
     faces = faces[polygons_drawn]
+    #compute array of 2d coordinates from rotated_points
     flat = np.array((500*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-500*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
     #flat format: [[x, x...], [y, y...]]
-    
+
+    #reformat arrays to pass into draw_loop
     flat = np.swapaxes(flat,0,1)
     #flat format: [[x, y], [x, y]...]
     
@@ -167,11 +168,14 @@ def draw_points(obj):
     shaped_points = flat[faces_array-1]
     #shaped_points format: [[[x, y], [x, y]...]...]
     
+    #organize polygons by distance to camera position
+    #shapes farthest away are drawn first
     sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-position.pos,axis=1)
     sort_index = np.argsort(sort_points)
     shaped_points = shaped_points[np.flip(sort_index)]
     shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
-    
+
+    #prepare pointer of shaped_points compatible with draw_loop
     shaped_points = shaped_points.astype(np.int32)
     shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
     draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr)
@@ -180,7 +184,7 @@ def draw_points(obj):
 #shape format [[x,y,z],[x,y,z]...] point format [x,y,z] theta format [x,y,z]
 def rotate(shape,point,theta):
     sc = np.copy(shape)
-    
+    #rotate around y-axis
     cos = np.cos(theta[1])
     sin = np.sin(theta[1])
     x = sc[:,0]-point[0]
@@ -188,6 +192,7 @@ def rotate(shape,point,theta):
     sc[:,0] = x*cos-z*sin+point[0]
     sc[:,2] = z*cos+x*sin+point[2]
     
+    #rotate around x-axis
     cos = np.cos(theta[0])
     sin = np.sin(theta[0])
     y = sc[:,1]-point[1]
@@ -195,6 +200,7 @@ def rotate(shape,point,theta):
     sc[:,1] = y*cos-z*sin+point[1]
     sc[:,2] = z*cos+y*sin+point[2]
     
+    #rotate around z-axis
     cos = np.cos(theta[2])
     sin = np.sin(theta[2])
     x = sc[:,0]-point[0]
@@ -204,6 +210,7 @@ def rotate(shape,point,theta):
     
     return sc
 
+#clips polygon arrays to only include those visible to the camera
 def clip(polygon_o):
     polygon = np.copy(polygon_o)
     #polygon format: [[x, y], [x, y]...]
@@ -215,32 +222,6 @@ def clip(polygon_o):
         return polygon
     elif np.all(polygon[:,1] > -screen[1]/2) and np.all(polygon[:,1] < screen[1]/2):
         return polygon
-
-#determines if any points of shape2 is inside rectangular hitbox of shape1
-def hitbox(shape1,shape2):
-    #shape1_c and shape2_c are expendible copies of shape1 and shape2, to be manipulated without changing actual objects
-    shape1_c = copy.deepcopy(shape1)
-    shape2_c = copy.deepcopy(shape2)
-    #rotates shape1_c.pos by cam because shape2_c.coord is also rotated by cam
-    #this ensures all points are vel_y to date
-    rotate([shape1_c.pos],pos,cam)
-    #rotates shape2_c.coord opposite to the rotation of shape1
-    #this allows the hitbox of shape1 to be found without having to rotate the hitbox
-    rotate(shape2_c.coord,shape1_c.pos,[-shape1_c.ttheta[0],-shape1_c.ttheta[1],-shape1_c.ttheta[2]])
-    #state is True if a point in shape2_c.coord is within hitbox of shape1_c
-    state = False
-    #hitbox equations are centered around point(0,0,0), so shape2_c.coord has to be moved opposite to shape1_c.pos
-    for point in shape2_c.coord:
-        point[0] -= shape1_c.pos[0]
-        point[1] -= shape1_c.pos[1]
-        point[2] -= shape1_c.pos[2]
-        #determines if shape2 is in the hitbox of shape1 on xy plane, then the xz plane
-        xy = abs(point[0]/(shape1_c.hitbox[0]/2)+point[1]/(shape1_c.hitbox[1]/2))+abs(point[0]/(shape1_c.hitbox[0]/2)-point[1]/(shape1_c.hitbox[1]/2)) <= 2
-        xz = abs(point[0]/(shape1_c.hitbox[0]/2)+point[2]/(shape1_c.hitbox[2]/2))+abs(point[0]/(shape1_c.hitbox[0]/2)-point[2]/(shape1_c.hitbox[2]/2)) <= 2
-        #if both are true, shape2 is in the hitbox of shape1
-        if xy & xz:
-            state = True
-    return state
 
 #creating and specifying objects
 teapot = shapes("newell_teaset/teapot.obj")
@@ -280,32 +261,6 @@ def move(keys_pressed):
             position.cam_x -= 0.1
     
     return keys_pressed
-
-def mouse_look():
-    pygame.mouse.set_visible(False)
-#    pygame.event.set_grab(True)
-    mv = list(pygame.mouse.get_rel())
-    cam[0] -= mv[1]*.01
-    cam[1] += mv[0]*.01
-    
-#performs various tasks and calls functions
-#all shape objects need to be passed into this function together so shapes are layered correctly
-def exec_world(*shapes):
-    #positions points.coord relative to points.pos
-    for points in shapes:
-        #rotates all shapes according to cam angle
-        rotate(points.coord,pos,cam)
-        #ttheta is the total rotation of a shape and is used to determine hitbox
-        points.ttheta[0] = points.theta[0] + cam[0]
-        points.ttheta[1] = points.theta[1] + cam[1]
-        points.ttheta[2] = points.theta[2] + cam[2]
-    #object "player" follows the cam and pos so the rotations and ttheta are reversed
-    rotate(player.coord,pos,[-cam[0],0,0])
-    rotate(player.coord,pos,[0,-cam[1],0])
-    player.ttheta[0] = player.theta[0] - cam[0]
-    player.ttheta[1] = player.theta[1] - cam[1]
-    player.ttheta[2] = player.theta[2] - cam[2]
-    draw_points(shapes)
    
 create_SDL_window = drawPolygon.create_SDL_window
 create_SDL_window.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
@@ -334,10 +289,10 @@ def main():
         position.update()
         draw_points(teapot)
         end = time.time()
+        #control framerate
         if end-start < .017:
             time.sleep(.017-(end-start))
         print(end-start)
 
 if __name__ == "__main__":
     main()
- 
