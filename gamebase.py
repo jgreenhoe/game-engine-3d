@@ -68,6 +68,12 @@ class read_obj:
                     self.fvt.append(f_vt)
                     self.fvn.append(f_vn)
                     
+class read_mtl:
+    def __init__(self,mtl_file):
+        with open(obj_file) as file:
+            for line in file:
+                if line[:6] == "newmtl":
+                    pass
 
 class shapes:
     def __init__(self,obj_file):
@@ -156,12 +162,19 @@ def draw_points(obj):
     #rotated_points format: [[x, y, z], [x, y, z]...]
 
     #filter in only the faces that contain vertices whose normals face the camera
-    normals_drawn = rotated_normals[:,2] < 0
-    polygon_normals = normals_drawn[nvfaces-1]
-    polygons_drawn = np.any(polygon_normals,1)
-    faces = faces[polygons_drawn]
+    bool_normals_drawn = rotated_normals[:,2] < 0
+    bool_polygon_normals = bool_normals_drawn[nvfaces-1]
+    bool_vertices_drawn = np.any(bool_polygon_normals,1)
+    faces = faces[bool_vertices_drawn]
+    
+    #filter in only the faces in front of the camera
+    bool_vertices_drawn = rotated_points[:,2] > position.z
+    bool_polygons_drawn = bool_vertices_drawn[faces-1]
+    bool_faces_drawn = np.any(bool_polygons_drawn,1)
+    faces = faces[bool_faces_drawn]
+    
     #compute array of 2d coordinates from rotated_points
-    flat = np.array((500*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-500*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
+    flat = np.array((d*(rotated_points[:,0]-position.pos[0])/(rotated_points[:,2]-position.pos[2])+screen[0]/2,-d*(rotated_points[:,1]-position.pos[1])/(rotated_points[:,2]-position.pos[2])+screen[1]/2))
     #flat format: [[x, x...], [y, y...]]
 
     #reformat arrays to pass into draw_loop
@@ -228,8 +241,8 @@ def clip(polygon_o):
         return polygon
 
 #creating and specifying objects
-teapot = shapes("newell_teaset/teapot.obj")
-#teapot = shapes("/home/pi/Downloads/woman.obj")
+#teapot = shapes("newell_teaset/teapot.obj")
+teapot = shapes("/home/pi/Downloads/sphere.obj")
 #changes the velocity and cam angle of player
 def move(keys_pressed):
     keys_released = []
