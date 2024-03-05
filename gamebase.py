@@ -9,7 +9,7 @@ import threading
 import queue
 from handle_inputs import handle_inputs
 #Declaring lists and variables
-screen = [1000,500]
+screen = [1000, 500]
 d = 500
 #.so file compiled from draw_loop.c
 drawPolygon = ctypes.PyDLL("/home/pi/Code/game-engine-3d/drawPolygons.so")
@@ -109,18 +109,18 @@ class objects(position):
         #each face has max_len vertex indexes
         #this allows the face array to be converted to np.array
         for i in obj.fv:
-            while len(i) < max_len:
+            while len(i) < 4:
                 i.append(i[-1])
         #repeate the process of vertex faces for vertex normal faces
         max_len = len(max(obj.fvn, key=len))
         for i in obj.fvn:
-            while len(i) < max_len:
+            while len(i) < 4:
                 i.append(i[-1])
         #convert vertex and vertex normal faces to np.array
         self.vfaces = np.array(obj.fv)
         self.nvfaces = np.array(obj.fvn)
         max_color = 2200
-        self.colors = np.array([np.linspace(0,75,max_color),np.full(max_color, 100),np.full(max_color, 100)])
+        self.colors = np.array([np.linspace(50,255,max_color),np.full(max_color, 100),np.full(max_color, 100)])
         
         self.hitbox = self.Hitbox(self)
         
@@ -130,49 +130,22 @@ class objects(position):
         self.points[:,2] += self.z
         self.orig_points = self.points
         
+    class Hitbox:
+        def __init__(self, objects):
+            vert_dist_list = np.linalg.norm(objects.points, axis=1)
+            self.vert_dist = max(vert_dist_list)
+            self.xprism = [min(objects.points[0]), max(objects.points[0])]
+            self.yprism = [min(objects.points[1]), max(objects.points[1])]
+            self.zprism = [min(objects.points[2]), max(objects.points[2])]
+        
     def update(self):
         self.pos = [self.x, self.y, self.z]
         self.cam = [self.cam_x, self.cam_y, self.cam_z]
         self.points = self.orig_points + self.pos
-        
-        
-    class Hitbox:
-        def __init__(self, objects):
-            vert_dist = np.linalg.norm(objects.points[0])
-            xbound = [objects.points[0][0], objects.points[0][0]]
-            ybound = [objects.points[0][1], objects.points[0][1]]
-            zbound = [objects.points[0][2], objects.points[0][2]]
-            self.sphere_bound_index = 0
-            self.xbound_index = [0, 0]
-            self.ybound_index = [0, 0]
-            self.zbound_index = [0, 0]
-            index_counter = 0
-            for i in objects.points:
-                if np.linalg.norm(i) > vert_dist:
-                    vert_dist = np.linalg.norm(i)
-                    self.sphere_bound_index = index_counter
-                    
-                if i[0] < xbound[0]:
-                    xbound[0] = i[0]
-                    self.xbound_index[0] = index_counter
-                elif i[0] > xbound[1]:
-                    xbound[1] = i[0]
-                    self.xbound_index[1] = index_counter
-                if i[1] < ybound[0]:
-                    ybound[0] = i[1]
-                    self.ybound_index[0] = index_counter
-                elif i[1] > ybound[1]:
-                    ybound[1] = i[1]
-                    self.ybound_index[1] = index_counter
-                if i[2] < zbound[0]:
-                    zbound[0] = i[2]
-                    self.zbound_index[0] = index_counter
-                elif i[2] > zbound[1]:
-                    zbound[1] = i[2]
-                    self.zbound_index[1] = index_counter
-                index_counter += 1
+        self.Hitbox.xprism = [min(self.points[0]), max(self.points[0])]
+        self.Hitbox.yprism = [min(self.points[1]), max(self.points[1])]
+        self.Hitbox.zprism = [min(self.points[2]), max(self.points[2])]
 
-                
     #multiplies self.shape by size multiplier
     def set_size(self,size):
         #size format: [x, y, z]
@@ -180,63 +153,74 @@ class objects(position):
             i[0] = i[0]*size[0]
             i[1] = i[1]*size[1]
             i[2] = i[2]*size[2]
+        vert_dist_list = np.linalg.norm(self.points, axis=1)
+        self.hitbox.vert_dist = max(vert_dist_list)
 
 #create instance of position for player position
 cam_position = position()
 #calculates optimized 2d coordinates from 'shapes' instances,
 #then calls the draw_loop function from drawPolygon to render
-def draw_points(obj):
-    points = obj.points
-    normals = obj.normals
-    faces = obj.vfaces
-    nvfaces = obj.nvfaces
-    colors = obj.colors
-    
-    rotated_points = rotate(points,cam_position.pos,cam_position.cam)
-    rotated_normals = rotate(normals, [0,0,0],cam_position.cam)
-    #rotated_points format: [[x, y, z], [x, y, z]...]
+def draw_points(*objs):
+    shaped_points_all = []
+    sort_points_all = []
+    colors_all = []
+    for obj in objs:
+        points = obj.points
+        normals = obj.normals
+        faces = obj.vfaces
+        nvfaces = obj.nvfaces
+        colors = obj.colors
+        
+        rotated_points = rotate(points,cam_position.pos,cam_position.cam)
+        rotated_normals = rotate(normals, [0,0,0],cam_position.cam)
+        #rotated_points format: [[x, y, z], [x, y, z]...]
 
-    #filter in only the faces that contain vertices whose normals face the camera
-    bool_normals_drawn = rotated_normals[:,2] < 0
-    bool_polygon_normals = bool_normals_drawn[nvfaces-1]
-    bool_vertices_drawn = np.any(bool_polygon_normals,1)
-    faces = faces[bool_vertices_drawn]
-    
-    #filter in only the faces in front of the camera
-    bool_vertices_drawn = rotated_points[:,2] > cam_position.z
-    bool_polygons_drawn = bool_vertices_drawn[faces-1]
-    bool_faces_drawn = np.any(bool_polygons_drawn,1)
-    faces = faces[bool_faces_drawn]
-    
-    #compute array of 2d coordinates from rotated_points
-    flat = np.array((d*(rotated_points[:,0]-cam_position.pos[0])/(rotated_points[:,2]-cam_position.pos[2])+screen[0]/2,-d*(rotated_points[:,1]-cam_position.pos[1])/(rotated_points[:,2]-cam_position.pos[2])+screen[1]/2))
-    #flat format: [[x, x...], [y, y...]]
+        #filter in only the faces that contain vertices whose normals face the camera
+        bool_normals_drawn = rotated_normals[:,2] < 0
+        bool_polygon_normals = bool_normals_drawn[nvfaces-1]
+        bool_vertices_drawn = np.any(bool_polygon_normals,1)
+        faces = faces[bool_vertices_drawn]
+        
+        #filter in only the faces in front of the camera
+        bool_vertices_drawn = rotated_points[:,2] > cam_position.z
+        bool_polygons_drawn = bool_vertices_drawn[faces-1]
+        bool_faces_drawn = np.any(bool_polygons_drawn,1)
+        faces = faces[bool_faces_drawn]
+        
+        if faces.size > 0:
+            #compute array of 2d coordinates from rotated_points
+            flat = np.array((d*(rotated_points[:,0]-cam_position.pos[0])/(rotated_points[:,2]-cam_position.pos[2])+screen[0]/2,-d*(rotated_points[:,1]-cam_position.pos[1])/(rotated_points[:,2]-cam_position.pos[2])+screen[1]/2))
+            #flat format: [[x, x...], [y, y...]]
 
-    #reformat arrays to pass into draw_loop
-    flat = np.swapaxes(flat,0,1)
-    #flat format: [[x, y], [x, y]...]
+            #reformat arrays to pass into draw_loop
+            flat = np.swapaxes(flat,0,1)
+            #flat format: [[x, y], [x, y]...]
+            
+            faces_array = np.array(faces)
+            shaped_points = flat[faces_array-1]
+            #shaped_points format: [[[x, y], [x, y]...]...]
+            shaped_points_all.extend(shaped_points)
+            colors = np.swapaxes(colors,0,1)
+            colors_all.extend(colors)
+            #organize polygons by distance to camera position
+            #shapes farthest away are drawn first
+            sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-cam_position.pos,axis=1)
+            sort_points_all.extend(sort_points)
     
-    faces_array = np.array(faces)
-    shaped_points = flat[faces_array-1]
-    #shaped_points format: [[[x, y], [x, y]...]...]
-    
-    #organize polygons by distance to camera position
-    #shapes farthest away are drawn first
-    sort_points = np.linalg.norm(rotated_points[faces_array[:,0]-1]-cam_position.pos,axis=1)
-    sort_index = np.argsort(sort_points)
-    shaped_points = shaped_points[np.flip(sort_index)]
-    shaped_points = np.ascontiguousarray(np.swapaxes(shaped_points,1,2))
-    
-    #configure color data
-    colors = np.swapaxes(colors,0,1)
-    colors = colors[np.flip(sort_index)]
+    if faces.size > 0:
+        sort_index = np.argsort(sort_points_all)
+        shaped_points_all = np.array(shaped_points_all)[np.flip(sort_index)]
+        shaped_points_all = np.ascontiguousarray(np.swapaxes(shaped_points_all,1,2))
+        
+        #configure color data
+        colors_all = np.array(colors_all)[np.flip(sort_index)]
 
-    #prepare pointer of shaped_points compatible with draw_loop
-    shaped_points = shaped_points.astype(np.float32)
-    shaped_points_ptr = shaped_points.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-    colors = colors.astype(np.float32)
-    colors_ptr = colors.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-    draw_loop(window,renderer,shaped_points.shape[0],shaped_points.shape[2],shaped_points_ptr, colors_ptr)
+        #prepare pointer of shaped_points compatible with draw_loop
+        shaped_points_all = shaped_points_all.astype(np.float32)
+        shaped_points_ptr = shaped_points_all.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        colors_all = colors_all.astype(np.float32)
+        colors_ptr = colors_all.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        draw_loop(window,renderer,shaped_points_all.shape[0],shaped_points_all.shape[2],shaped_points_ptr, colors_ptr)
 
 #rotates shape around points by theta
 #shape format [[x,y,z],[x,y,z]...] point format [x,y,z] theta format [x,y,z]
@@ -269,8 +253,9 @@ def rotate(shape,point,theta):
     return sc
 
 #creating and specifying objects
-teapot = objects("newell_teaset/teapot.obj")
+teapot = objects("/home/pi/Downloads/sphere.obj")
 player = objects("/home/pi/Downloads/sphere.obj")
+player.set_size([.2,.2,.2])
 #teapot = objects("/home/pi/Downloads/Gun.obj")
 #changes the velocity and cam angle of player
 def move(keys_pressed):
@@ -318,8 +303,9 @@ def move(keys_pressed):
     return keys_pressed
    
 def detect_hitbox(obj1, obj2):
-    dist = np.linalg.norm(obj1.points[obj1.hitbox.sphere_bound_index]-obj2.points[obj2.hitbox.sphere_bound_index])
-    print(dist)
+    obj_dist = np.linalg.norm((obj1.x-obj2.x, obj1.y-obj2.y, obj1.z-obj2.z))
+    is_touching = (obj_dist - obj1.hitbox.vert_dist - obj2.hitbox.vert_dist) < 0
+    print(is_touching)
 
 create_SDL_window = drawPolygon.create_SDL_window
 create_SDL_window.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
@@ -355,13 +341,12 @@ def main():
         keys_pressed = move(keys_pressed)
         cam_position.update()
         player.x = cam_position.x
-        player.y = cam_position.y - 20
-        player.z = cam_position.z + 70
+        player.y = cam_position.y - 2
+        player.z = cam_position.z + 10
         player.update()
         detect_hitbox(teapot, player)
         clear_SDL_renderer(renderer)
-        draw_points(teapot)
-        draw_points(player)
+        draw_points(player, teapot)
         present_SDL_renderer(renderer)
         end = time.time()
         #control framerate
