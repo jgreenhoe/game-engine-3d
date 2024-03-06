@@ -75,12 +75,11 @@ class read_mtl:
                 if line[:6] == "newmtl":
                     pass
 
-#class of the camera position and rotation
 class position:
     def __init__(self):
         self.x = 0
         self.y = 0
-        self.z = -10
+        self.z = 0
         self.cam_x = 0
         self.cam_y = 0
         self.cam_z = 0
@@ -125,26 +124,23 @@ class objects(position):
         self.hitbox = self.Hitbox(self)
         
         super().__init__()
-        self.points[:,0] += self.x
-        self.points[:,1] += self.y
-        self.points[:,2] += self.z
         self.orig_points = self.points
         
     class Hitbox:
         def __init__(self, objects):
             vert_dist_list = np.linalg.norm(objects.points, axis=1)
             self.vert_dist = max(vert_dist_list)
-            self.xprism = [min(objects.points[0]), max(objects.points[0])]
-            self.yprism = [min(objects.points[1]), max(objects.points[1])]
-            self.zprism = [min(objects.points[2]), max(objects.points[2])]
+            self.xprism = [min(objects.points[:,0]), max(objects.points[:,0])]
+            self.yprism = [min(objects.points[:,1]), max(objects.points[:,1])]
+            self.zprism = [min(objects.points[:,2]), max(objects.points[:,2])]
         
     def update(self):
         self.pos = [self.x, self.y, self.z]
         self.cam = [self.cam_x, self.cam_y, self.cam_z]
         self.points = self.orig_points + self.pos
-        self.Hitbox.xprism = [min(self.points[0]), max(self.points[0])]
-        self.Hitbox.yprism = [min(self.points[1]), max(self.points[1])]
-        self.Hitbox.zprism = [min(self.points[2]), max(self.points[2])]
+        self.hitbox.xprism = [min(self.points[:,0]), max(self.points[:,0])]
+        self.hitbox.yprism = [min(self.points[:,1]), max(self.points[:,1])]
+        self.hitbox.zprism = [min(self.points[:,2]), max(self.points[:,2])]
 
     #multiplies self.shape by size multiplier
     def set_size(self,size):
@@ -305,6 +301,13 @@ def move(keys_pressed):
 def detect_hitbox(obj1, obj2):
     obj_dist = np.linalg.norm((obj1.x-obj2.x, obj1.y-obj2.y, obj1.z-obj2.z))
     is_touching = (obj_dist - obj1.hitbox.vert_dist - obj2.hitbox.vert_dist) < 0
+    if is_touching:
+        if (obj1.hitbox.xprism[0] > obj2.hitbox.xprism[1]) or (obj2.hitbox.xprism[0] > obj1.hitbox.xprism[1]):
+            is_touching = False
+        elif (obj1.hitbox.yprism[0] > obj2.hitbox.yprism[1]) or (obj2.hitbox.yprism[0] > obj1.hitbox.yprism[1]):
+            is_touching = False
+        elif (obj1.hitbox.zprism[0] > obj2.hitbox.zprism[1]) or (obj2.hitbox.zprism[0] > obj1.hitbox.zprism[1]):
+            is_touching = False
     print(is_touching)
 
 create_SDL_window = drawPolygon.create_SDL_window
@@ -335,11 +338,12 @@ handle_inputs.start_thread()
 
 def main():
     keys_pressed = []
-    
+    cam_position.z = -30
     while True:
         start = time.time()
         keys_pressed = move(keys_pressed)
         cam_position.update()
+        teapot.update()
         player.x = cam_position.x
         player.y = cam_position.y - 2
         player.z = cam_position.z + 10
