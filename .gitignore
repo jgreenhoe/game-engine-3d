@@ -1,3 +1,5 @@
+__pycache__/
+.vscode
 backup.py
 draw_loop
 draw_loop.o
@@ -8,7 +10,12 @@ new.py
 test1.py
 test2.py
 test3.py
-__pycache__/
 test
 test.o
 test.c
+draw_loop.c
+gamebase.py
+test.cpp
+gamebase.exe
+draw.exe
+drawPolygons.so
